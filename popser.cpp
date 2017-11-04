@@ -192,6 +192,7 @@ void getCredentials(Parameters params){
 	getline(infile,str); 
 	password=str.substr(11);
 	
+	cerr<<username<<pasword<<endl;
 	cerr<<username.c_str()[0]<<endl;
 	cerr<<username.c_str()[1]<<endl;
 	cerr<<username.c_str()[2]<<endl;
