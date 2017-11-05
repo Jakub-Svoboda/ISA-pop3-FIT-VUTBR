@@ -28,7 +28,7 @@ string username;
 string password;
 sem_t *mutex1;
 bool quitting=false;
-std::ifstream file("log.txt");
+std::fstream longLog("longLog.txt");
 
 typedef struct Parameters{
 	bool h;
@@ -107,6 +107,11 @@ bool starts_with(const string& s1, const string& s2) {
     return s2.size() <= s1.size() && s1.compare(0, s2.size(), s2) == 0;
 }
 
+//https://stackoverflow.com/questions/20446201/how-to-check-if-string-ends-with-txt
+bool has_suffix(const string &str, const string &suffix){
+    return str.size() >= suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 void SignalHandler(int iSignalNum){
     switch(iSignalNum){
 		case SIGINT:
@@ -131,20 +136,15 @@ string getTimestamp(){
 	return timestamp;
 }
 
-string logOperations(Parameters params){
-	string str;
-	int num;									//get the number of the last email in log file
-	while (std::getline(file, str)){						
-		string buf; 
-		stringstream ss(str); 
-		vector<string> tokens; 
-		while (ss >> buf){
-			tokens.push_back(buf); 
-		}	
-		num = atoi(tokens[0].c_str());
-		
-    }
-	num++;
+int fileSize(const std::string &fileName){
+    ifstream file2(fileName.c_str(), ifstream::in | ifstream::binary);
+    file2.seekg(0, ios::end);
+    int size = file2.tellg();
+    file2.close();
+    return size;
+}
+
+void unix2dos(Parameters params){
 	string path = params.d;
 	char c = path.back();
 	if(c != '/'){
@@ -152,11 +152,261 @@ string logOperations(Parameters params){
 	}else{
 		path += "new" ;
 	}
-	cerr << path << endl;
-	for (auto & p : fs::directory_iterator(path))
-		cerr << p << endl;
+	
+	for (auto & p : fs::directory_iterator(path)){
+		string line,text;
+		std::ifstream myfile;
+		myfile.open(p.path().c_str());
+		int i = 0;
+		while (std::getline(myfile, line)){
+			i++;
+			std::istringstream iss(line);
+			if(has_suffix(line,string("\r"))){
+				line+="\n";
+			}else{
+				line+="\r\n";
+			}
+			text+=line;
+		}	
+		myfile.close();
+		std::ofstream file;
+		file.open(p.path().c_str());
+		file<<text;
+	}
+}
+
+string getid(){
+	string id = to_string(getpid());
+    int random_variable = std::rand();
+	id = to_string(random_variable) + id + to_string(time(NULL));
+	return id;
+}
+
+string logOperations(Parameters params){
+	srand(time(NULL));
+	unix2dos(params);
+	string str;
+	string path = params.d;
+	char c = path.back();
+	if(c != '/'){
+		path += "/new" ;
+	}else{
+		path += "new" ;
+	}
+	int numOfEmails = 0;
+	int totalSize = 0;
+
+	std::ofstream movements;
+	movements.open("movements.txt");
+	
+	for (auto & p : fs::directory_iterator(path)){
+		numOfEmails++;
+		totalSize += fileSize(p.path());
+		string str = p.path().c_str();
+		size_t index = 0;
+		index = str.find("Maildir/new", index);
+		str.replace(index, 11, "Maildir/cur");
+		movements<<str<<" "<<p.path().c_str()<<endl;	
+		fs::rename(p.path().c_str(),str);
+	}
+	movements.close();
+	str = "+OK "+username+"'s maildrop has " + to_string(numOfEmails) + " new messages (" + to_string(totalSize) + " octets)\r\n";
 	
 	
+	std::ofstream mailInfo;
+	mailInfo.open("mailInfo.txt");
+	path = params.d;
+	c = path.back();
+	if(c != '/'){
+		path += "/cur" ;
+	}else{
+		path += "cur" ;
+	}
+	
+	int number =0;
+	for (auto & p : fs::directory_iterator(path)){
+		number++;
+		int size = fileSize(p.path());
+		string str = p.path().c_str();
+		string id = getid();
+		mailInfo<<number<< " " <<size<<" "<<p.path().c_str()<<" "<<id<<" A"<<endl;	
+	}
+	mailInfo.close();
+	return str;
+}
+
+string dele(string arg, Parameters params){
+	arg += " ";
+	std::ifstream mailInfo;
+	mailInfo.open("mailInfo.txt");
+	string text,line, line2, find;
+	bool didWeDoIt = false;
+	while (std::getline(mailInfo, line)){
+		std::istringstream iss(line);
+		text+=line + "\n";
+		if(!strncmp(line.c_str(), arg.c_str(), arg.size())){
+			if(line.back() == 'D'){
+				return "-ERR message " + arg + "already deleted\r\n";
+			}
+			find = line;
+			line2=line;
+			line2.pop_back();
+			line2+="D\n";
+			didWeDoIt=true;
+		}
+	}	
+	mailInfo.close();
+	if(!didWeDoIt)
+		return "-ERR\r\n";
+	size_t pos = text.find(find);
+	
+	text.replace(pos, line2.size(), line2);
+	std::ofstream mailInfo2;
+	mailInfo2.open("mailInfo.txt");
+	mailInfo2<<text;
+	mailInfo2.close();
+	return "+OK message "+ arg + "deleted\r\n";
+}
+
+string list(Parameters params){
+	std::ifstream mailInfo;
+	mailInfo.open("mailInfo.txt");
+	std::string text,line;
+	int numOfEmails = 0;
+	while (std::getline(mailInfo, line)){
+		std::istringstream iss(line);
+		if (line.back() == 'D'){
+			continue;
+		}else{
+			numOfEmails++;
+			vector<string> v;
+			for(string word; iss >> word; )
+				v.push_back(word);
+			text += v[0] + " " + v[1] + "\n";
+		}
+	}	
+	text+=".\r\n";
+	mailInfo.close();	
+	text = "+OK " + to_string(numOfEmails) + " messages:\n" +text;
+	return text;
+}
+
+string stat(Parameters params){
+	std::ifstream mailInfo;
+	mailInfo.open("mailInfo.txt");
+	std::string line;
+	int numOfEmails = 0;
+	int sizeTotal = 0;
+	while (std::getline(mailInfo, line)){
+		std::istringstream iss(line);
+		if (line.back() == 'D'){
+			continue;
+		}else{
+			numOfEmails++;
+			vector<string> v;
+			for(string word; iss >> word; )
+				v.push_back(word);
+			sizeTotal += atoi(v[1].c_str());
+		}
+	}	
+
+	mailInfo.close();	
+	return "+OK " + to_string(numOfEmails) + " " + to_string(sizeTotal) + "\r\n";
+
+}
+
+string retr(string arg, Parameters params){
+	arg += " ";
+	std::ifstream mailInfo;
+	mailInfo.open("mailInfo.txt");
+	string text,line;
+	bool didWeDoIt = false;
+	string path;
+	string size;
+	while (std::getline(mailInfo, line)){
+		std::istringstream iss(line);
+		if(!strncmp(line.c_str(), arg.c_str(), arg.size())){
+			if(line.back() == 'D'){
+				return "-ERR\r\n";
+			}
+			vector<string> v;
+			for(string word; iss >> word; )
+				v.push_back(word);
+			if(v[0] + " " == arg){
+				path = v[2];
+				size = v[1];
+				didWeDoIt = true;
+			}
+		}
+	}	
+	if(!didWeDoIt)
+		return "-ERR\r\n";
+	
+	mailInfo.close();
+	
+	std::ifstream mail;
+	mail.open(path);
+	while (std::getline(mail, line)){
+		std::istringstream iss(line);
+		text+=line + "\n";
+	}
+
+	return "+OK " + size + " octets \n" + text + ".\r\n";
+}
+
+string rset(Parameters params){
+	std::ifstream mailInfo;
+	mailInfo.open("mailInfo.txt");
+	string text,line;
+	while (std::getline(mailInfo, line)){
+		std::istringstream iss(line);
+		if(line.back() == 'D'){
+			vector<string> v;
+			for(string word; iss >> word; )
+				v.push_back(word);
+			line = v[0] + " " + v[1] + " " + v[2] + " " + v[3] +" A";
+		}
+		text += line + "\n";
+	}
+	mailInfo.close();
+	std::ofstream mailInfo2;
+	mailInfo2.open("mailInfo.txt");
+	mailInfo2<<text;
+	return "+OK\r\n";
+}
+
+string uidl(string arg, Parameters params){
+	string str = "+OK ";
+	std::string::iterator end_pos = std::remove(arg.begin(), arg.end(), ' ');
+	arg.erase(end_pos, arg.end());
+	if(arg == ""){
+		str+="\r\n";
+		std::ifstream mailInfo;
+		mailInfo.open("mailInfo.txt");
+		string text,line;
+		while (std::getline(mailInfo, line)){
+			std::istringstream iss(line);
+			vector<string> v;
+			for(string word; iss >> word; )
+				v.push_back(word);
+				str += v[0] + " " + v[3] + "\r\n";	
+		}	
+		str+=".\r\n";
+		mailInfo.close();	
+	}else{
+		std::ifstream mailInfo;
+		mailInfo.open("mailInfo.txt");
+		string text,line;
+		while (std::getline(mailInfo, line)){
+			std::istringstream iss(line);
+			vector<string> v;
+			for(string word; iss >> word; )
+				v.push_back(word);
+				if(v[0] == arg)
+					str += v[0] + " " + v[3] + "\r\n";		
+		}	
+		mailInfo.close();
+	}
 	
 	return str;
 }
@@ -164,8 +414,6 @@ string logOperations(Parameters params){
 string parseMsg(string message, Parameters params, string timestamp){
 	static bool inTransaction = false;
 	string response;
-//	message.erase(std::remove(message.begin(), message.end(), '\r'), message.end());	//remove newlines at the end of the imput message
-//	message.erase(std::remove(message.begin(), message.end(), '\n'), message.end());
 	string arg1, arg2, arg3;															//two arguments that the user has sent
 	istringstream iss(message);
 	getline(iss, arg1, ' ');															//save the two args
@@ -180,8 +428,7 @@ string parseMsg(string message, Parameters params, string timestamp){
 			if(!username.compare(user) && !password.compare(arg2)){						//AUTH ok
 				if(!sem_trywait(mutex1)){
 					inTransaction=true;
-					string str = logOperations(params);
-					response="+OK maildrop locked and ready\r\n";
+					response = logOperations(params);
 				}else{
 					response="-ERR unable to lock maildrop\r\n";
 				}
@@ -205,8 +452,7 @@ string parseMsg(string message, Parameters params, string timestamp){
 			if(!username.compare(arg2) && !arg3.compare(md5("<" + timestamp + ">" + password))){
 				if(!sem_trywait(mutex1)){
 					inTransaction=true;
-					string str = logOperations(params);
-					response="+OK maildrop locked and ready\r\n";
+					response = logOperations(params);
 				}else{
 					response="-ERR unable to lock maildrop\r\n";
 				}	
@@ -220,20 +466,20 @@ string parseMsg(string message, Parameters params, string timestamp){
 		if (starts_with(message,"quit")){
 			response="+OK logging out\r\n";
 			quitting = true;
-		}else if (!arg1.compare("list")){	
-		
-		}else if (!arg1.compare("stat")){
-			
+		}else if (starts_with(message,"list")){	
+			response = list(params);
+		}else if (starts_with(message,"stat")){
+			response = stat(params);
 		}else if (!arg1.compare("retr")){	
-		
+			response = retr(arg2,params);
 		}else if (!arg1.compare("dele")){
-			
-		}else if (!arg1.compare("rset")){
-
-		}else if (!arg1.compare("noop")){		
-		
-		}else if (!arg1.compare("uidl")){
-			
+			response = dele(arg2,params);
+		}else if (starts_with(message,"rset")){
+			response = rset(params);
+		}else if (starts_with(message,"noop")){		
+			response="+OK\r\n";
+		}else if (starts_with(message,"uidl")){
+			response = uidl(arg2,params);
 		}else{
 			response = "-ERR\r\n";
 		}	
