@@ -153,9 +153,8 @@ string logOperations(Parameters params){
 		path += "new" ;
 	}
 	cerr << path << endl;
-//	for (auto & p : fs::directory_iterator(path))
-//		std::cout << p << std::endl;
-	
+	for (auto & p : fs::directory_iterator(path))
+		cerr << p << endl;
 	
 	
 	
