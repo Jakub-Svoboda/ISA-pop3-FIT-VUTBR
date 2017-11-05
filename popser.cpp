@@ -139,8 +139,14 @@ string logOperations(){
 		while (ss >> buf){
 			tokens.push_back(buf); 
 		}	
-		num = atoi(tokens[0]);
+		num = atoi(tokens[0].c_str());
+		
     }
+	num++;
+	
+	
+	
+	
 	
 	return str;
 }
