@@ -1,2 +1,2 @@
-all: popser.cpp 
-	g++ -Wall -pedantic -std=c++1y -pthread -o popser popser.cpp 
+all: popser.cpp md5.cpp md5.h
+	g++ -Wall -pedantic -std=c++17 -pthread -o popser popser.cpp md5.cpp
