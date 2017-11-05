@@ -22,6 +22,8 @@
 #define QUEUE 1             // queue length for  waiting connections
 
 using namespace std;
+namespace fs = std::experimental::filesystem;
+
 string username;
 string password;
 sem_t *mutex1;
@@ -129,7 +131,7 @@ string getTimestamp(){
 	return timestamp;
 }
 
-string logOperations(){
+string logOperations(Parameters params){
 	string str;
 	int num;									//get the number of the last email in log file
 	while (std::getline(file, str)){						
@@ -143,7 +145,16 @@ string logOperations(){
 		
     }
 	num++;
-	
+	string path = params.d;
+	char c = path.back();
+	if(c != '/'){
+		path += "/new" ;
+	}else{
+		path += "new" ;
+	}
+	cerr << path << endl;
+//	for (auto & p : fs::directory_iterator(path))
+//		std::cout << p << std::endl;
 	
 	
 	
@@ -170,7 +181,7 @@ string parseMsg(string message, Parameters params, string timestamp){
 			if(!username.compare(user) && !password.compare(arg2)){						//AUTH ok
 				if(!sem_trywait(mutex1)){
 					inTransaction=true;
-					string str = logOperations();
+					string str = logOperations(params);
 					response="+OK maildrop locked and ready\r\n";
 				}else{
 					response="-ERR unable to lock maildrop\r\n";
@@ -195,7 +206,7 @@ string parseMsg(string message, Parameters params, string timestamp){
 			if(!username.compare(arg2) && !arg3.compare(md5("<" + timestamp + ">" + password))){
 				if(!sem_trywait(mutex1)){
 					inTransaction=true;
-					string str = logOperations();
+					string str = logOperations(params);
 					response="+OK maildrop locked and ready\r\n";
 				}else{
 					response="-ERR unable to lock maildrop\r\n";
