@@ -420,9 +420,10 @@ string uidl(string arg, Parameters params){
 		while (std::getline(mailInfo, line)){
 			std::istringstream iss(line);
 			vector<string> v;
-			for(string word; iss >> word; )
+			for(string word; iss >> word; ){
 				v.push_back(word);
-				str += v[0] + " " + v[3] + "\r\n";	
+			}	
+			str += v[0] + " " + v[3] + "\r\n";	
 		}	
 		str+=".\r\n";
 		mailInfo.close();	
@@ -433,10 +434,11 @@ string uidl(string arg, Parameters params){
 		while (std::getline(mailInfo, line)){
 			std::istringstream iss(line);
 			vector<string> v;
-			for(string word; iss >> word; )
+			for(string word; iss >> word; ){
 				v.push_back(word);
-				if(v[0] == arg)
-					str += v[0] + " " + v[3] + "\r\n";		
+			}	
+			if(v[0] == arg)
+				str += v[0] + " " + v[3] + "\r\n";		
 		}	
 		mailInfo.close();
 	}
