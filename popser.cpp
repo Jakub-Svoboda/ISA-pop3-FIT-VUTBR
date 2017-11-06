@@ -39,6 +39,31 @@ typedef struct Parameters{
 	bool r;
 } Parameters;
 
+void resetFiles(){
+	if(fs::exists("movements.txt")){
+		std::ifstream file;
+		file.open("movements.txt");
+		string line;
+		while (std::getline(file, line)){
+			std::istringstream iss(line);
+			vector<string> v;
+			for(string word; iss >> word; )
+				v.push_back(word);
+			if(fs::exists(v[0])){
+				fs::rename(v[0],v[1]);
+			}
+		}
+		file.close();
+	}
+	if(fs::exists("mailInfo.txt")){
+		fs::remove("mailInfo.txt");
+	}
+	if(fs::exists("movements.txt")){
+		fs::remove("movements.txt");
+	}
+
+}
+
 Parameters validateParameters(int argc, char* argv[]){
 	Parameters params = {false,"", false, 0, "", false};
 	int opt;
@@ -63,7 +88,7 @@ Parameters validateParameters(int argc, char* argv[]){
 				params.d = string(optarg);
 				break;	
 			case 'r':
-				params.c = true;
+				params.r = true;
 				break;			
 			default: //Unknown parameter
 				cerr << ("./popser [-h] [-a PATH] [-c] [-p PORT] [-d PATH] [-r]\n");
@@ -71,10 +96,19 @@ Parameters validateParameters(int argc, char* argv[]){
 		}
 	}
 	
-	if(argc == 1 && params.r==true){ 				//TODO RESET
-		
+	if(argc == 2 && params.r==true){ 				//TODO RESET
+		resetFiles();
+		sem_close(mutex1);
+		sem_unlink("mutex1");
+		exit(0);
 	}else{
 		if(params.a != "" && params.p != 0 && params.d != ""){							//All required parameters are present
+			if(params.r){
+				resetFiles();
+				sem_close(mutex1);
+				sem_unlink("mutex1");
+				exit(0);
+			}
 			ifstream ifile(params.a);
 			if(!ifile) cerr << "Authentication file does not exist: "<<params.a<<"\n"; //Check if file exists
 			struct stat dirInfo;
@@ -196,8 +230,7 @@ string logOperations(Parameters params){
 	int numOfEmails = 0;
 	int totalSize = 0;
 
-	std::ofstream movements;
-	movements.open("movements.txt");
+	std::ofstream movements("movements.txt",std::ios_base::app | std::ios_base::out);
 	
 	for (auto & p : fs::directory_iterator(path)){
 		numOfEmails++;
@@ -377,7 +410,7 @@ string rset(Parameters params){
 
 string uidl(string arg, Parameters params){
 	string str = "+OK ";
-	std::string::iterator end_pos = std::remove(arg.begin(), arg.end(), ' ');
+	string::iterator end_pos = std::remove(arg.begin(), arg.end(), ' ');
 	arg.erase(end_pos, arg.end());
 	if(arg == ""){
 		str+="\r\n";
@@ -409,6 +442,63 @@ string uidl(string arg, Parameters params){
 	}
 	
 	return str;
+}
+
+string top(string arg2, string arg3, Parameters params){
+	string::iterator end_pos = std::remove(arg2.begin(), arg2.end(), ' ');
+	arg2.erase(end_pos, arg2.end());
+	end_pos = std::remove(arg3.begin(), arg3.end(), ' ');
+	arg3.erase(end_pos, arg3.end());
+	if(arg2=="" || atoi(arg2.c_str())<=0){
+		return "-ERR Invalid message number\r\n";
+	}
+	if(arg3=="" ||atoi(arg3.c_str())<0){
+		return "-ERR Noise after message number\r\n";
+	}
+	string line,line2,text;
+	std::ifstream mailInfo;
+	mailInfo.open("mailInfo.txt");
+	while (std::getline(mailInfo, line)){
+		std::istringstream iss(line);
+		if(!strncmp(line.c_str(), arg2.c_str(), arg2.size())){
+			if(line.back() == 'D'){
+				return "-ERR message " + arg2 + " is marked as deleted\r\n";
+			}else{
+				text ="+OK\r\n";
+				vector<string> v;
+				for(string word; iss >> word; )
+					v.push_back(word);
+				std::ifstream mail;
+				mail.open(v[2]);
+				for(int i = 1; i<12 + atoi(arg3.c_str()); i++){
+					if(std::getline(mail, line2)){
+						text+=line2+"\r\n";
+					}
+				}
+				text+=".\r\n";
+				return text;
+			}
+		}	
+	}
+	return "-ERR there is no message " + arg2 + ".\r\n"	;
+}
+
+void updateState(Parameters params){
+	std::ifstream mailInfo;
+	mailInfo.open("mailInfo.txt");
+	string line;
+	while (std::getline(mailInfo, line)){
+		std::istringstream iss(line);
+
+		if(line.back() == 'D'){
+			vector<string> v;
+			for(string word; iss >> word; )
+				v.push_back(word);
+			fs::remove(v[2]);
+		}
+		
+	}	
+	mailInfo.close();
 }
 
 string parseMsg(string message, Parameters params, string timestamp){
@@ -464,6 +554,7 @@ string parseMsg(string message, Parameters params, string timestamp){
 		}
 	}else if (inTransaction){
 		if (starts_with(message,"quit")){
+			updateState(params);
 			response="+OK logging out\r\n";
 			quitting = true;
 		}else if (starts_with(message,"list")){	
@@ -480,6 +571,11 @@ string parseMsg(string message, Parameters params, string timestamp){
 			response="+OK\r\n";
 		}else if (starts_with(message,"uidl")){
 			response = uidl(arg2,params);
+		}else if (!arg1.compare("top")){
+			istringstream iss2(arg2);
+			getline(iss2, arg2, ' ');															
+			getline(iss2, arg3, '\r');	
+			response = top(arg2,arg3,params);
 		}else{
 			response = "-ERR\r\n";
 		}	
@@ -487,8 +583,8 @@ string parseMsg(string message, Parameters params, string timestamp){
 	return response;
 }
 
-//The majority of this function comes from the ISA examplary echo-server2.cpp file from https://wis.fit.vutbr.cz/FIT/st/course-files-st.php.cs?file=%2Fcourse%2FISA-IT%2Fexamples&cid=12191
-//The author of this project is not the author of most of the code in the following function.
+//The majority of this function's code comes from the ISA examplary echo-server2.cpp file from https://wis.fit.vutbr.cz/FIT/st/course-files-st.php.cs?file=%2Fcourse%2FISA-IT%2Fexamples&cid=12191
+//The author of this project does not claim authorship of most of the code in the following function.
 int connection (Parameters params){
 	int fd;
 	int newsock;
@@ -588,11 +684,23 @@ void getCredentials(Parameters params){
 	infile.close();
 }
 
+void createFiles(){
+	if(!fs::exists("mailInfo.txt")){
+		std::ofstream outfile ("mailInfo.txt");
+		outfile.close();
+	}
+	if(!fs::exists("movements.txt")){
+		std::ofstream outfile ("movements.txt");
+		outfile.close();
+	}
+}
+
 int main(int argc, char* argv[]) {
 	signal(SIGINT,  SignalHandler);
 	signal(SIGSEGV, SignalHandler);
 	signal(SIGTSTP, SignalHandler);
 	mutex1 = sem_open("mutex1", O_CREAT | O_EXCL, 0644, 1);	
+	createFiles();
 	Parameters params = validateParameters(argc, argv);
 	getCredentials(params);
 	connection(params);
