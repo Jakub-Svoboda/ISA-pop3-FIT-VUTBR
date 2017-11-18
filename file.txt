@@ -1,2 +1,2 @@
-username = jmeno
+username = Tam
 password = heslo

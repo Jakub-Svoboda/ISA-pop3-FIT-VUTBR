@@ -1,0 +1,281 @@
+Spuštění programu bez parametrů
+./popser
+F   wait
+F   fail
+F   stderr
+
+---------------------
+
+Výpis nápovědy
+./popser -h
+F   wait
+F   stdout
+
+--------------------
+
+Základní funkčnost
+./popser -a authfile -p <port> -d Maildir -c
+S   +OK <any>
+C   USER Tam
+S   +OK <any>
+C   PASS Ab.
+S   +OK <any>
+C   STAT
+S   +OK 5 2374
+C   LIST
+S   +OK <any>
+    1 520
+    2 476
+    3 443
+    4 484
+    5 451
+    .
+C   LIST 4
+S   +OK <id> 484
+C   LIST 7
+S   -ERR <any>
+C   STAT
+S   +OK 5 2374
+C   TOP 2 1
+S   +OK <any>
+    Return-Path: <root@localhost>
+    X-Original-To: isa2015@localhost
+    Delivered-To: isa2015@localhost
+    Received: from localhost (localhost [127.0.0.1])
+    	by isa2015 (Postfix) with ESMTP id 6C756260CB
+    	for <isa2015@localhost>; Sun, 22 Oct 2017 16:45:23 +0200 (CEST)
+    Subject: Email cislo 3
+    Message-Id: <20171022144532.6C756260CB@isa2015>
+    Date: Sun, 22 Oct 2017 16:45:23 +0200 (CEST)
+    From: root@localhost
+    
+    Zdaaaaaar,
+    .
+C   RETR 4
+S   +OK <any>
+    Return-Path: <root@localhost>
+    X-Original-To: isa2015@localhost
+    Delivered-To: isa2015@localhost
+    Received: from localhost (localhost [127.0.0.1])
+    	by isa2015 (Postfix) with ESMTP id 3FBBC260CB
+    	for <isa2015@localhost>; Sun, 22 Oct 2017 16:28:25 +0200 (CEST)
+    Subject: Email cislo 1
+    Message-Id: <20171022142834.3FBBC260CB@isa2015>
+    Date: Sun, 22 Oct 2017 16:28:25 +0200 (CEST)
+    From: root@localhost
+    
+    Ahoj,
+    
+    Posilam si mail, protoze mi jebe z projektu,
+    doufam, ze to stoji aspon za to,
+    cus.
+    .
+C   TOP 4 1000
+S   +OK <any>
+    Return-Path: <root@localhost>
+    X-Original-To: isa2015@localhost
+    Delivered-To: isa2015@localhost
+    Received: from localhost (localhost [127.0.0.1])
+    	by isa2015 (Postfix) with ESMTP id 3FBBC260CB
+    	for <isa2015@localhost>; Sun, 22 Oct 2017 16:28:25 +0200 (CEST)
+    Subject: Email cislo 1
+    Message-Id: <20171022142834.3FBBC260CB@isa2015>
+    Date: Sun, 22 Oct 2017 16:28:25 +0200 (CEST)
+    From: root@localhost
+    
+    Ahoj,
+    
+    Posilam si mail, protoze mi jebe z projektu,
+    doufam, ze to stoji aspon za to,
+    cus.
+    .
+C   TOP 7 2
+S   -ERR <any>
+C   NOOP
+S   +O<any>
+C   UIDL 3
+S   +OK <id> <any>
+C   UIDL 8
+S   -ERR <any>
+C   ABC
+S   -ERR <any>
+C   QUIT
+S   +OK <any>
+
+---------------------
+
+Neexistující authfile
+./popser -a no -p <port> -d Maildir -c
+F   wait
+F   fail
+F   stderr
+
+---------------------
+
+Neplatný obsah authfile
+./popser -a invalid-authfile -p <port> -d Maildir -c
+F   wait
+F   fail
+F   stderr
+
+---------------------
+
+Neplatný obsah authfile 2
+./popser -a invalid-authfile-2 -p <port> -d Maildir -c
+F   wait
+F   fail
+F   stderr
+
+---------------------
+
+Neplatný obsah authfile 3
+./popser -a invalid-authfile-3 -p <port> -d Maildir -c
+F   wait
+F   fail
+F   stderr
+
+---------------------
+
+Heslo obsahující mezery, připojení více klientů současně
+./popser -a authfile-2 -d Maildir -c -p <port>
+S1  +OK <any>
+C1  USER Tam
+S1  +OK <any>
+C1  PASS  
+S1  -ERR <any>
+C1  USER Tam
+S1  +OK <any>
+C1  PASS    
+S1  +OK <any>
+C1  NOOP
+S1  +O<any>
+S2  +OK <any>
+C2  USER Tam
+S2  +OK <any>
+C2  PASS    
+S2  -ERR <any>
+S3  +OK <any>
+C3  USER Tam
+S3  +OK <any>
+C3  PASS    
+S3  -ERR <any>
+C1  USER Tam
+S1  -ERR <any>
+C1  QUIT
+S1  +OK <any>
+C3  USER Tam
+S3  +OK <any>
+C3  PASS    
+S3  +OK <any>
+C2  USER Tam
+S2  +OK <any>
+C2  PASS    
+S2  -ERR <any>
+C2  QUIT
+S2  +OK <any>
+C3  QUIT
+S3  +OK <any>
+
+---------------------
+
+Citlivost na velikost písmen
+./popser -p <port> -c -a authfile -d Maildir
+S   +OK <any>
+C   user Tam
+S   +OK <any>
+C   paSS ab.
+S   -ERR <any>
+C   User Tam
+S   +OK <any>
+C   Pass Ab.
+S   +OK <any>
+C   list
+S   +OK scan listing follows
+    1 520
+    2 476
+    3 484
+    4 443
+    5 451
+    .
+C   LIst 2
+S   +OK <id> 476
+C   dele 3
+S   +OK <any>
+C   dele 3
+S   -ERR <any>
+C   list 3
+S   -ERR <any>
+C   RetR 3
+S   -ERR <any>
+C   RetR 1
+S   +OK <any>
+    Return-Path: <root@localhost>
+    X-Original-To: isa2015@localhost
+    Delivered-To: isa2015@localhost
+    Received: from localhost (localhost [127.0.0.1])
+    	by isa2015 (Postfix) with ESMTP id 32A04260CB
+    	for <isa2015@localhost>; Sun, 22 Oct 2017 16:46:48 +0200 (CEST)
+    Subject: Email cislo 4
+    Message-Id: <20171022144659.32A04260CB@isa2015>
+    Date: Sun, 22 Oct 2017 16:46:48 +0200 (CEST)
+    From: root@localhost
+    
+    Poraaaaad me to baviiiiiiiii,
+    pokud tyhle maily cte nekdo jinej,
+    tak si o me bude myslet, ze jsem peknej deges.
+    
+    Cauky mnauky
+    .
+C   rset
+S   +OK <any>
+C   quit
+S   +OK <any>
+
+---------------
+
+E-maily obsahující tečky
+./popser -p <port> -c -a authfile -d Maildir2
+S   +OK <any>
+C   USER Tam
+S   +OK <any>
+C   PASS Ab.
+S   +OK <any>
+C   STAT
+S   +OK 2 48
+C   LIST
+S   +OK <any>
+    1 43
+    2 5
+    .
+C   RETR 1
+S   +OK <any>
+    Ahoj...
+    
+    ..
+    ...
+    ....
+    ...
+    ..
+    
+     .
+     ..
+     ...
+     ..
+     .
+    .
+C   TOP 1 9
+S   +OK <any>
+    Ahoj...
+    
+    ..
+    ...
+    ....
+    ...
+    ..
+    
+     .
+     ..
+     ...
+    .
+C   QUIT
+S   +OK <any>

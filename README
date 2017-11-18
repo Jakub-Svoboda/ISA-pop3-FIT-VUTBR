@@ -1,0 +1,35 @@
+# README
+
+Project: 	POP3 server
+Author:		Jakub Svoboda
+Login:		xsvobo0z
+Email:		xsvobo0z@stud.fit.vutbr.cz
+Date:		6. November 2017
+Course:		ISA 2017
+
+## All files:	
+	popser.cpp, Makefile, md5.cpp, md5.h, README, manual.pdf
+
+## Usage: 
+./popser [-h] [-a PATH] [-c] [-p PORT] [-d PATH] [-r]
+			-h: prints help text
+			-a: path to the authentication file
+			-c: enable cleartext authentication
+			-p: port number
+			-d: path to the Maildir folder
+			-r: reset server
+			
+## Requirements:
+	The Makefile requires a gcc with support of the <experimental/filesystem> library.
+	
+## Extensions:
+	This implementation also supports the optional TOP command.
+	
+## Contributions:
+	The md5 hash functions in files md5.cpp and md5.h come from http://www.zedwood.com/article/cpp-md5-function.
+	The majority of the "connection()" function's code comes from the ISA examplary echo-server2.cpp file from https://wis.fit.vutbr.cz/FIT/st/course-files-st.php.cs?file=%2Fcourse%2FISA-IT%2Fexamples&cid=12191
+	The author of this project does not claim authorship of these two parts of the project.	
+
+
+
+
