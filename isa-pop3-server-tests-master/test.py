@@ -112,6 +112,7 @@ def do_send_msg(conn_id, val):
     if 'apop' in flags and val[:4].upper() == 'APOP':
         val = re.sub(r'(APOP .+? )(.+)', lambda x: apop_hash(conn_id, x), val)
     #print("Sending:", val)
+
     if not my_send(get_connection(conn_id), val + "\r\n"):
         fail.append('Chyba při odesílání zprávy:\n  ' + val[:70])
         return False
@@ -122,7 +123,7 @@ def do_recv_msg(conn_id, val):
     global fail, last_id
     s = my_receive(get_connection(conn_id))
 
-    print("Received:", s,end="")
+   # print("Received:", s,end="")
     if re.match('[^\r]\n', s):
         fail.append('Server ve zprávě vrátil \\n, před kterým nebylo' +
                     ' \\r\n  ' + val[:70])
@@ -306,6 +307,7 @@ def do_test(test):
     
     out = srv.stdout.read()
     err = srv.stderr.read()
+    #print(out, err)
     printed_stdout = out != b''
     printed_stderr = err != b''
     

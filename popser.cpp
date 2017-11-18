@@ -97,6 +97,10 @@ void validateParameters(int argc, char* argv[]){
 				break;
 			case 'a':											//the authentication file parameter
 				params.a.assign(optarg);
+				if(!fs::exists(params.a)){
+					cerr<<"Auth file does not exist "<<params.a<<endl;
+					exit(-1);
+				}		
 				break;
 			case 'c':											//clear text parameter
 				params.c = true;
@@ -106,6 +110,10 @@ void validateParameters(int argc, char* argv[]){
 				break;	
 			case 'd':											//Maildir directory parameter
 				params.d = string(optarg);
+				if(!fs::exists(params.d)){
+					cerr<<"Maildir does not exist "<<params.d<<endl;
+					exit(-1);
+				}
 				break;	
 			case 'r':											//reset
 				params.r = true;
@@ -172,11 +180,17 @@ bool has_suffix(const string &str, const string &suffix){
 void SignalHandler(int iSignalNum){
     switch(iSignalNum){
 		case SIGINT:
+			sem_close(mutex1);				//clear semaphores
+			sem_unlink("mutex1");
+			break;
 		case SIGSEGV:
+			sem_close(mutex1);				//clear semaphores
+			sem_unlink("mutex1");
+			break;
 		case SIGTSTP:
-				sem_close(mutex1);				//clear semaphores
-				sem_unlink("mutex1");
-		break;
+			sem_close(mutex1);				//clear semaphores
+			sem_unlink("mutex1");
+			break;
      default:
         sem_close(mutex1);
 		sem_unlink("mutex1");
@@ -259,14 +273,16 @@ string logOperations(){
 	int totalSize = 0;
 								//open file for logging email movements
 	std::ofstream movements("movements.txt",std::ios_base::app | std::ios_base::out);
-	
+
 	for (auto & p : fs::directory_iterator(path)){
 		numOfEmails++;
 		totalSize += fileSize(p.path());			//calculate total size
 		string str = p.path().c_str();
 		size_t index = 0;
-		index = str.find("Maildir/new", index);
-		str.replace(index, 11, "Maildir/cur");
+
+		index = str.find("/new", index);
+		str.replace(index, 4, "/cur");
+	
 		movements<<str<<" "<<p.path().c_str()<<endl;	
 		fs::rename(p.path().c_str(),str);			//move each file from new to the cur folder
 	}
@@ -355,6 +371,38 @@ string list(){
 	return text;
 }
 
+string list2(string arg){			//LIST with an argument
+	arg += " ";
+	std::ifstream mailInfo;
+	mailInfo.open("mailInfo.txt");		//open log file
+	string text,line;
+	bool didWeDoIt = false;
+	string size;
+	while (std::getline(mailInfo, line)){	//for each logged email
+		std::istringstream iss(line);
+		if(!strncmp(line.c_str(), arg.c_str(), arg.size())){
+			if(line.back() == 'D'){			//email is marked for deletion -> negative message
+				return "-ERR Message is deleted\r\n";
+			}
+			vector<string> v;
+			for(string word; iss >> word; )
+				v.push_back(word);
+			if(v[0] + " " == arg){
+				size = v[1];
+				didWeDoIt = true;
+			}
+		}
+	}	
+	if(!didWeDoIt)
+		return "-ERR There's no message " + arg + ".\r\n";
+	
+	mailInfo.close();
+	string::iterator end_pos = std::remove(arg.begin(), arg.end(), ' ');
+	arg.erase(end_pos, arg.end());
+										//return positive message with size and content
+	return "+OK " + arg + " " + size + "\r\n";
+}
+
 //STAT command
 string stat(){
 	std::ifstream mailInfo;
@@ -414,7 +462,10 @@ string retr(string arg){
 	mail.open(path);					//read the email
 	while (std::getline(mail, line)){
 		std::istringstream iss(line);
-		text+=line + "\r\n";
+		if(line.c_str()[0] == '.'){
+			line="."+line;
+		}
+		text+=line + "\n";
 	}
 										//return positive message with size and content
 	return "+OK " + size + " octets \n" + text + ".\r\n";
@@ -473,9 +524,13 @@ string uidl(string arg){
 				v.push_back(word);
 			}	
 			if(v[0] == arg){							//if email # matches the requested #
-				str += v[0] + " " + v[3] + "\r\n";	
-				mailInfo.close();
-				return str;
+				if(line.back() == 'D'){
+					return "-ERR Message deleted\r\n";
+				}else{
+					str += v[0] + " " + v[3] + "\r\n";	
+					mailInfo.close();
+					return str;
+				}
 			}	
 		}	
 		mailInfo.close();
@@ -497,7 +552,7 @@ string top(string arg2, string arg3){
 	if(arg3=="" ||atoi(arg3.c_str())<0){								//negative line number
 		return "-ERR Noise after message number\r\n";
 	}
-	string line,line2,text;
+	string line,line2,text,body="";
 	std::ifstream mailInfo;
 	mailInfo.open("mailInfo.txt");						//open log file
 	while (std::getline(mailInfo, line)){				//for each line
@@ -512,12 +567,35 @@ string top(string arg2, string arg3){
 					v.push_back(word);
 				std::ifstream mail;
 				mail.open(v[2]);						//read for the requested number of lines
-				for(int i = 1; i<12 + atoi(arg3.c_str()); i++){
+				
+				bool isBody = false;
+				int i=0;
+				while (1){	//read logs line by line
 					if(std::getline(mail, line2)){
-						text+=line2+"\r\n";
+						if(line2 == "\r" || line2 == "" ){
+							isBody=true;
+						}
+						if(!isBody){
+							text+=line2+"\r\n";
+						}else{
+							if(i <= atoi(arg3.c_str())){
+								if(line2.c_str()[0] == '.'){
+									line2="."+line2;
+								}
+								body+=line2+"\r\n";
+							}else{
+								break;
+							}
+							i++;
+						}
+						
+					}else{
+						break;
 					}
-				}										//return the content
-				text+=".\r\n";
+					
+				}
+														//return the content
+				text+= body + ".\r\n";
 				return text;
 			}
 		}	
@@ -570,10 +648,12 @@ string parseMsg(string message, string timestamp){
 	static string user = "";
 	getCredentials();
 	if(params.c && !inTransaction){	 				//Plaintext authorization
+		
 		if(!arg1.compare("user")){
 			user = arg2;
 			response = "+OK \r\n";
-		}else if (!arg1.compare("pass")){		//TODO spaces in password
+		}else if (!arg1.compare("pass")){		
+			
 			if(!username.compare(user) && !password.compare(arg2)){						//AUTH ok
 				if(!sem_trywait(mutex1)){
 					inTransaction=true;
@@ -589,18 +669,19 @@ string parseMsg(string message, string timestamp){
 			
 		}else if (starts_with(message,"quit")){
 			response="+OK logging out\r\n";
-			exit(0);								//TODO need to send message first
+											
 		}else{
-			response = "-ERR\r\n";
+			response = "-ERR Unknown command\r\n";
 		}
 	}else if (!params.c && !inTransaction){			//Hashed authorization
-		if (!arg1.compare("quit")){
-			response="+OK logging out\r\n";
+		if (starts_with(message,"quit")){
+			response = "+OK logging out\r\n";
 		}else if (!arg1.compare("apop")){
 			istringstream iss2(arg2);
 			getline(iss2, arg2, ' ');															
 			getline(iss2, arg3, '\r');
 			if(!username.compare(arg2) && !arg3.compare(md5("<" + timestamp + ">" + password))){
+				
 				if(!sem_trywait(mutex1)){
 					inTransaction=true;
 					response = logOperations();
@@ -619,12 +700,12 @@ string parseMsg(string message, string timestamp){
 			updateState();
 			response="+OK logging out\r\n";
 			quitting = true;
-		}else if (starts_with(message,"list")){	
+		}else if (!arg1.compare("list")){	
+			response = list2(arg2);
+		}else if(starts_with(message,"list")){
 			response = list();
 		}else if (starts_with(message,"stat")){
-		
 			response = stat();
-			//cerr<<"x"<<response<<"x";
 		}else if (!arg1.compare("retr")){	
 			response = retr(arg2);
 		}else if (!arg1.compare("dele")){
@@ -721,10 +802,15 @@ int connection (){
 					err(1,"write() failed.");
 				else if (i != (int) response.length())
 					err(1,"write(): buffer written partially");
-				if(quitting) break;
+				if(quitting) {
+					sem_post(mutex1);
+					break;
+				}	
+				if(response == "+OK logging out\r\n")break;
+				
 			}
 			// no other data from the client -> close the client and wait for another
-			sem_post(mutex1);
+			
 			close(newsock);                          // close the new socket
 			exit(0);                                 // exit the child process
 		} 
@@ -754,9 +840,9 @@ int main(int argc, char* argv[]) {
 	signal(SIGSEGV, SignalHandler);
 	signal(SIGTSTP, SignalHandler);
 	signal(SIGALRM, ALARMhandler);		//and for the autologoff alarm
+	validateParameters(argc, argv);			//check if parameters are OK
 	mutex1 = sem_open("mutex1", O_CREAT | O_EXCL, 0644, 1);		//open a semaphore for Maildir
 	createFiles();
-	validateParameters(argc, argv);			//check if parameters are OK
 	getCredentials();
 	connection();											//connect
 	sem_close(mutex1);											//clear the semaphore
