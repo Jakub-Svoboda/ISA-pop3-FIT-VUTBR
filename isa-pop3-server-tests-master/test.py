@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 
 import codecs
+import hashlib
 import re
 import time
+import os
+import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -12,7 +16,9 @@ from random import randint
 POPSER_PATH = '../popser'
 DEFAULT_SLEEP = 0.025
 RETRY_SLEEP = 0.1
+BEFORE_RECV_SLEEP = 0.05
 RETRIES = 10
+CHECK_NONCE_UNIQUENESS = True
 
 port = randint(10000, 50000)
 last_query = ''
@@ -21,6 +27,8 @@ flags = set()
 fail = []
 conn = {}
 msg_ids = []
+inited_maildirs = set()
+apop_nonces = {}
 
 if sys.stdout.encoding is None or sys.stdout.encoding == 'ANSI_X3.4-1968':
     utf8_writer = codecs.getwriter('UTF-8')
@@ -40,6 +48,7 @@ def open_socket(retries=RETRIES):
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect(('127.0.0.1', port))
+        s.settimeout(0.1)
         return s
     except ConnectionRefusedError:
         if retries == 0:
@@ -49,27 +58,39 @@ def open_socket(retries=RETRIES):
         return open_socket(retries-1)
 
 def my_send(sock, s_msg):
+    global fail
     if sock is None:
         return False
     totalsent = 0
     msg = s_msg.encode('utf-8')
-    while totalsent < len(s_msg):
-        sent = sock.send(msg[totalsent:])
-        if sent == 0:
-            return False
-        totalsent = totalsent + sent
+    try:
+        while totalsent < len(s_msg):
+            sent = sock.send(msg[totalsent:])
+            if sent == 0:
+                return False
+            totalsent = totalsent + sent
+    except socket.timeout:
+        fail.append('Odesílání zprávy trvalo příliš dlouho (timeout)')
+        return False
     return True
 
 def my_receive(sock):
+    global fail
     if sock is None:
         return '\n'
+    time.sleep(BEFORE_RECV_SLEEP)
     #chunks = []
     #bytes_recd = 0
     #while bytes_recd < msg_len:
-    chunk = sock.recv(4096)#min(msg_len - bytes_recd, 2048))
+    try:
+        chunk = sock.recv(4096)#min(msg_len - bytes_recd, 2048))
+    except socket.timeout:
+        fail.append('Příjem zprávy trval příliš dlouho (timeout)')
+        return '\n'
+
     return chunk.decode("utf-8")
     if chunk == b'':
-        return ''
+        return '\n'
     #chunks.append(chunk)
     #bytes_recd = bytes_recd + len(chunk)
     #return b''.join(chunks)
@@ -88,6 +109,9 @@ def translate_callback(r):
 def do_send_msg(conn_id, val):
     global fail, last_query
     val = re.sub(r'^([A-Za-z]+ )([0-9]+)', translate_callback, val)
+    if 'apop' in flags and val[:4].upper() == 'APOP':
+        val = re.sub(r'(APOP .+? )(.+)', lambda x: apop_hash(conn_id, x), val)
+    #print("Sending:", val)
     if not my_send(get_connection(conn_id), val + "\r\n"):
         fail.append('Chyba při odesílání zprávy:\n  ' + val[:70])
         return False
@@ -97,29 +121,56 @@ def do_send_msg(conn_id, val):
 def do_recv_msg(conn_id, val):
     global fail, last_id
     s = my_receive(get_connection(conn_id))
-    
+
+    print("Received:", s,end="")
     if re.match('[^\r]\n', s):
         fail.append('Server ve zprávě vrátil \\n, před kterým nebylo' +
                     ' \\r\n  ' + val[:70])
         return False
     s = s.replace('\r', '')
-    if s[-1] != '\n':
+    if len(s) == 0 or s[-1] != '\n':
+        print(s,len(s))
         fail.append('Server vrátil zprávu, která nekončí \\n\n  ' + val[:70])
         return False
     s = s[:-1]
     if last_query.upper() == 'LIST':
         return check_list(s, val)
+        
+    if 'apop' in flags and val == '<nonce>':
+        return check_apop_nonce(conn_id, s)
+    
     val = val.replace(r'<id>', last_id)
     val_r = re.escape(val)
-    val_r = val_r.replace(r'\<any\>', '.+')
+    val_r = val_r.replace(r'\ \<any\>', '.*')
     if not re.match(val_r, s):
         str = ('Server vrátil jinou odpověď na dotaz "{}"\n  ' +
-               'Chci: x{}x\n  Dostal jsem: x{}x').format(last_query,
+               'Chci: {}\n  Dostal jsem: {}').format(last_query,
                val.replace('\n', '\n' + 8 * ' '),
                s.replace('\n', '\n' + 15 * ' '))
         fail.append(str)
         return False
     return True
+
+def rmdir(dir):
+    try:
+        shutil.rmtree(dir)
+    except FileNotFoundError:
+        pass
+
+def do_action(action):
+    if action[0] == 'init_maildir':
+        dir = action[1]
+        if '/' in dir:
+            return False
+        rmdir(dir + '/new')
+        rmdir(dir + '/cur')
+        shutil.copytree(dir + '/bac', dir + '/new')
+        os.mkdir(dir + '/cur')
+        return True
+    if action[0] == 'reset_server':
+        subprocess.call([POPSER_PATH, '-r'])
+        return True
+    return False
 
 def translate_id(id):
     global msg_ids, last_id
@@ -133,7 +184,7 @@ def check_list(rec, exp):
     lines_rec = rec.split('\n')
     lines_exp = exp.split('\n')
     
-    if lines_rec[0][:4] != '+OK ' or lines_rec[-1] != '.':
+    if lines_rec[0][:3] != '+OK' or lines_rec[-1] != '.':
         out = False
     if len(lines_rec) != len(lines_exp):
         out = False
@@ -159,6 +210,23 @@ def check_list(rec, exp):
         fail.append(str)
     return out
 
+def check_apop_nonce(conn_id, msg):
+    global fail, apop_nonces
+    nonce_regex_res = re.search("<.+>", msg)
+    if msg[:4] != '+OK ' or nonce_regex_res is None:
+        fail.append('Nesprávný formát úvodní zprávy:\n  ' + msg)
+        return False
+    nonce = nonce_regex_res.group(0)
+    if CHECK_NONCE_UNIQUENESS and (nonce in apop_nonces.values()):
+        fail.append('Nonce není unikátní:\n  ' + nonce)
+        return False
+    apop_nonces[conn_id] = nonce
+    return True
+    
+def apop_hash(conn_id, msg):
+    str = (apop_nonces[conn_id] + msg.group(2)).encode('utf-8')
+    return msg.group(1) + hashlib.md5(str).hexdigest()
+
 def read_file(data):
     m_key = None
     m_val = None
@@ -181,6 +249,7 @@ def do_test(test):
     flags = set()
     fail = []
     conn = {}
+    apop_nonces = {}
     
     l = test.split('\n', 2)
     if len(l) == 2:
@@ -191,6 +260,12 @@ def do_test(test):
     for a in cmd.split()[1:]:
         if a == '<port>':
             a = get_port()
+        if args[-1] == '-d':
+            if a not in inited_maildirs:
+                do_action(['init_maildir', a])
+                if len(inited_maildirs) > 0:
+                    do_action(['reset_server'])
+                inited_maildirs.add(a)
         args.append(a)
     srv = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(DEFAULT_SLEEP)
@@ -209,6 +284,11 @@ def do_test(test):
             # Přečíst paket
             if not do_recv_msg(key[1:], val):
                 break
+        elif key[0] == 'A':
+            # Provede akci
+            if not do_action(val.split()):
+                fail.append('Selhala akce: ' + val)
+                break
     
     for _, c in conn.items():
         if c is not None:
@@ -222,7 +302,7 @@ def do_test(test):
             fail.append('Neočekávaný návrarový kód (chci %s, dostal jsem %s)' %
                         (want, got))
     else:
-        srv.kill()
+        srv.send_signal(signal.SIGINT)
     
     out = srv.stdout.read()
     err = srv.stderr.read()
@@ -265,4 +345,7 @@ class Color:
 
 with open('tests.txt', 'r', encoding='utf-8') as f:
     for test in re.split('\n+-{3,}\n+', f.read().strip()):
+        if test.startswith('*'):
+            break
         do_test(test)
+    do_action(['reset_server'])

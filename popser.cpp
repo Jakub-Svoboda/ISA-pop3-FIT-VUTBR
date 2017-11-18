@@ -132,8 +132,10 @@ void validateParameters(int argc, char* argv[]){
 			ifstream ifile(params.a);
 			if(!ifile) cerr << "Authentication file does not exist: "<<params.a<<"\n"; //Check if file exists
 			struct stat dirInfo;
-			if( stat( params.d.c_str(), &dirInfo ) != 0) cerr<<"Directory does not exist: "<<params.d.c_str()<<"\n";	//Check if folder exists
-
+			if( stat( params.d.c_str(), &dirInfo ) != 0) {
+				cerr<<"Directory does not exist: "<<params.d.c_str()<<"\n";	//Check if folder exists
+				exit(-1);
+			}	
 		}else{
 			if (params.a == ""){					//Incorrect parameter data, print help text and exit with -1
 				cerr << ("Missing -a PAHT argument\n");
@@ -156,7 +158,9 @@ void validateParameters(int argc, char* argv[]){
 
 //https://stackoverflow.com/questions/7755719/check-if-string-starts-with-another-string-find-or-compare
 bool starts_with(const string& s1, const string& s2) {	
-    return s2.size() <= s1.size() && s1.compare(0, s2.size(), s2) == 0;
+	string str = s1;
+	std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+    return s2.size() <= str.size() && str.compare(0, s2.size(), s2) == 0;
 }
 
 //https://stackoverflow.com/questions/20446201/how-to-check-if-string-ends-with-txt
@@ -240,6 +244,7 @@ string getid(){
 
 //Handles the Authentication phase of the process.
 string logOperations(){
+	
 	srand(time(NULL));			//randomize see
 	unix2dos();			//convert to \r\n newlines
 	string str;
@@ -287,7 +292,8 @@ string logOperations(){
 		string id = getid();
 		mailInfo<<number<< " " <<size<<" "<<p.path().c_str()<<" "<<id<<" A"<<endl;	
 	}
-	mailInfo.close();			
+	
+	mailInfo.close();	
 	return str;
 }
 
@@ -543,10 +549,9 @@ void getCredentials(){
 	string str;
 	ifstream infile;
 	infile.open (params.a.c_str());
-
+	
 	getline(infile,str); 
 	username=str.substr(11);		//save username
-	
 	getline(infile,str); 
 	password=str.substr(11);		//save password
 	
@@ -567,7 +572,7 @@ string parseMsg(string message, string timestamp){
 	if(params.c && !inTransaction){	 				//Plaintext authorization
 		if(!arg1.compare("user")){
 			user = arg2;
-			response = "+OK <any>\r\n";
+			response = "+OK \r\n";
 		}else if (!arg1.compare("pass")){		//TODO spaces in password
 			if(!username.compare(user) && !password.compare(arg2)){						//AUTH ok
 				if(!sem_trywait(mutex1)){
@@ -581,10 +586,10 @@ string parseMsg(string message, string timestamp){
 				user = "";
 				response = "-ERR [AUTH] Authentication failed\r\n";
 			}
-			return response;
+			
 		}else if (starts_with(message,"quit")){
 			response="+OK logging out\r\n";
-			exit(0);
+			exit(0);								//TODO need to send message first
 		}else{
 			response = "-ERR\r\n";
 		}
@@ -617,7 +622,9 @@ string parseMsg(string message, string timestamp){
 		}else if (starts_with(message,"list")){	
 			response = list();
 		}else if (starts_with(message,"stat")){
+		
 			response = stat();
+			//cerr<<"x"<<response<<"x";
 		}else if (!arg1.compare("retr")){	
 			response = retr(arg2);
 		}else if (!arg1.compare("dele")){
@@ -634,10 +641,11 @@ string parseMsg(string message, string timestamp){
 			getline(iss2, arg3, '\r');	
 			response = top(arg2,arg3);
 		}else{
-			response = "-ERR\r\n";
+			response = "-ERR \r\n";
 		}
 		alarm(TIMEOUT);	
 	}
+	//cerr<<"Sending back: "<<response;
 	return response;
 }
 
@@ -696,7 +704,7 @@ int connection (){
 			// until the client stops sending data (CRLF)
 			string timestamp = getTimestamp();
 			string welcome = "+OK POP3 server ready <" + timestamp + ">\r\n";
-			
+			//cerr<<"sending "<<welcome.length()<<endl;
 			i = write(newsock,welcome.c_str(),welcome.length());    // send a converted message to the client
 			if (i == -1)                           // check if data was successfully sent out
 				err(1,"write() failed.");
@@ -705,7 +713,9 @@ int connection (){
 
 			while((msg_size = read(newsock, buffer, BUFFER)) > 0){ // read the message
 				string message(buffer, msg_size);
+				//cerr<<"got this: "<<message<<endl;
 				string response = parseMsg(message, timestamp);		
+				//cerr<<"sending "<<response.length()<<endl;
 				i = write(newsock,response.c_str(),response.length());    // send a converted message to the client
 				if (i == -1)                           // check if data was successfully sent out
 					err(1,"write() failed.");

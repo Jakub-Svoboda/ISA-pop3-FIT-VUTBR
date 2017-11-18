@@ -21,21 +21,21 @@ S   +OK <any>
 C   PASS Ab.
 S   +OK <any>
 C   STAT
-S   +OK 5 2374
+S   +OK 5 2451
 C   LIST
 S   +OK <any>
-    1 520
-    2 476
-    3 443
-    4 484
-    5 451
+    1 536
+    2 493
+    3 458
+    4 500
+    5 464
     .
 C   LIST 4
-S   +OK <id> 484
+S   +OK <id> 500
 C   LIST 7
 S   -ERR <any>
 C   STAT
-S   +OK 5 2374
+S   +OK 5 2451
 C   TOP 2 1
 S   +OK <any>
     Return-Path: <root@localhost>
@@ -92,7 +92,7 @@ S   +OK <any>
 C   TOP 7 2
 S   -ERR <any>
 C   NOOP
-S   +O<any>
+S   +OK <any>
 C   UIDL 3
 S   +OK <id> <any>
 C   UIDL 8
@@ -148,7 +148,7 @@ S1  +OK <any>
 C1  PASS    
 S1  +OK <any>
 C1  NOOP
-S1  +O<any>
+S1  +OK <any>
 S2  +OK <any>
 C2  USER Tam
 S2  +OK <any>
@@ -191,14 +191,14 @@ C   Pass Ab.
 S   +OK <any>
 C   list
 S   +OK scan listing follows
-    1 520
-    2 476
-    3 484
-    4 443
-    5 451
+    1 536
+    2 493
+    3 500
+    4 458
+    5 464
     .
 C   LIst 2
-S   +OK <id> 476
+S   +OK <id> 493
 C   dele 3
 S   +OK <any>
 C   dele 3
@@ -233,6 +233,157 @@ S   +OK <any>
 
 ---------------
 
+Zabezpečené přihlášení pomocí APOP
+./popser -p <port> -a authfile -d Maildir
+F   apop
+S   <nonce>
+C   USER Tam
+S   -ERR <any>
+C   PASS Ab.
+S   -ERR <any>
+S2  <nonce>
+S3  <nonce>
+S4  <nonce>
+C4  QUIT
+S4  +OK
+S5  <nonce>
+C5  QUIT
+S5  +OK
+S6  <nonce>
+C2  APOP Tam Ab.
+S2  +OK <any>
+C2  QUIT
+S2  +OK <any>
+C6  APOP tam Ab.
+S6  -ERR <any>
+C6  APOP Tam spatne-heslo
+S6  -ERR <any>
+C6  APOP Tam Ab.
+S6  +OK <any>
+C3  APOP Tam Ab.
+S3  -ERR <any>
+C6  QUIT
+S6  +OK <any>
+C   APOP Tam Ab.
+S   +OK <any>
+C   QUIT
+S  +OK <any>
+C3  APOP Tam Ab.
+S3  +OK <any>
+C3  QUIT
+S3  +OK <any>
+
+---------------
+
+Mazání zpráv + jednoduchý APOP
+./popser -p <port> -a authfile -d Maildir
+F   apop
+S   <nonce>
+C   APOP Tam Ab.
+S   +OK <any>
+C   LIST
+S   +OK <any>
+    1 536
+    2 493
+    3 458
+    4 500
+    5 464
+    .
+C   STAT
+S   +OK 5 2451
+C   DELE 3
+S   +OK <any>
+C   DELE 4
+S   +OK <any>
+C   LIST 4
+S   -ERR <any>
+C   UIDL 4
+S   -ERR <any>
+C   RETR 4
+S   -ERR <any>
+C   TOP 4 1
+S   -ERR <any>
+C   STAT
+S   +OK 3 1493
+C   RSET
+S   +OK <any>
+C   LIST 4
+S   +OK <id> 500
+C   UIDL 4
+S   +OK <id> <any>
+C   RETR 4
+S   +OK <any>
+    Return-Path: <root@localhost>
+    X-Original-To: isa2015@localhost
+    Delivered-To: isa2015@localhost
+    Received: from localhost (localhost [127.0.0.1])
+    	by isa2015 (Postfix) with ESMTP id 3FBBC260CB
+    	for <isa2015@localhost>; Sun, 22 Oct 2017 16:28:25 +0200 (CEST)
+    Subject: Email cislo 1
+    Message-Id: <20171022142834.3FBBC260CB@isa2015>
+    Date: Sun, 22 Oct 2017 16:28:25 +0200 (CEST)
+    From: root@localhost
+    
+    Ahoj,
+    
+    Posilam si mail, protoze mi jebe z projektu,
+    doufam, ze to stoji aspon za to,
+    cus.
+    .
+C   TOP 4 1
+S   +OK <any>
+    Return-Path: <root@localhost>
+    X-Original-To: isa2015@localhost
+    Delivered-To: isa2015@localhost
+    Received: from localhost (localhost [127.0.0.1])
+    	by isa2015 (Postfix) with ESMTP id 3FBBC260CB
+    	for <isa2015@localhost>; Sun, 22 Oct 2017 16:28:25 +0200 (CEST)
+    Subject: Email cislo 1
+    Message-Id: <20171022142834.3FBBC260CB@isa2015>
+    Date: Sun, 22 Oct 2017 16:28:25 +0200 (CEST)
+    From: root@localhost
+    
+    Ahoj,
+    .
+C   STAT
+S   +OK 5 2451
+C   DELE 1
+S   +OK <any>
+C   QUIT
+S   +OK <any>
+S2  <nonce>
+C2  APOP Tam Ab.
+S2  +OK <any>
+C2  STAT
+S2  +OK 4 1915
+C2  QUIT
+S2  +OK <any>
+
+---------------
+
+Kontrola smazání zprávy po novém spuštění serveru
+./popser -p <port> -a authfile -d Maildir -c
+S   +OK <any>
+C   USER Tam
+S   +OK <any>
+C   PASS Ab.
+S   +OK <any>
+C   STAT
+S   +OK 4 1915
+C   LIST
+S   +OK <any>
+    1 493
+    2 458
+    3 500
+    4 464
+    .
+C   LIST 1
+S   +OK <id> 493
+C   QUIT
+S   +OK <any>
+
+---------------
+
 E-maily obsahující tečky
 ./popser -p <port> -c -a authfile -d Maildir2
 S   +OK <any>
@@ -241,11 +392,11 @@ S   +OK <any>
 C   PASS Ab.
 S   +OK <any>
 C   STAT
-S   +OK 2 48
+S   +OK 2 62
 C   LIST
 S   +OK <any>
-    1 43
-    2 5
+    1 56
+    2 6
     .
 C   RETR 1
 S   +OK <any>
@@ -277,5 +428,46 @@ S   +OK <any>
      ..
      ...
     .
+C   QUIT
+S   +OK <any>
+
+------------------------
+
+E-maily, které nemají na konci souboru LF
+./popser -p <port> -c -a authfile -d no-newline
+S   +OK <any>
+C   USER Tam
+S   +OK <any>
+C   PASS Ab.
+S   +OK <any>
+C   LIST
+S   +OK <any>
+    1 68
+    2 73
+    3 24
+    4 65
+    .
+C   RETR 1
+S   +OK <any>
+    Soubor s jednim radkem ukoncenym CR+LF
+    a radkem neukoncenym nicim
+    .
+C   RETR 2
+S   +OK <any>
+    Soubor, ktery obsahuje jak samotne LF
+    tak i CR+LF
+    a na konci nema nic
+    .
+C   RETR 3
+S   +OK <any>
+    Soubor bez \n na konci
+    .
+C   RETR 4
+S   +OK <any>
+    Soubor s jednim radkem ukoncenym LF
+    a radkem neukoncenym nicim
+    .
+C   STAT
+S   +OK 4 230
 C   QUIT
 S   +OK <any>
